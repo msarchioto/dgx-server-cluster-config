@@ -1,0 +1,31 @@
+# NVIDIA Network Operator — starting point for DGX-like RoCE/IB clusters.
+# Pin: NETWORK_OPERATOR_VERSION in install script (default v25.1.0).
+# Customize secondaryNetwork / OFED for your NICs after reviewing:
+#   helm show values nvidia/network-operator
+
+nfd:
+  enabled: false  # GPU Operator usually already deploys NFD
+
+# Deploy OFED driver container only if NOT pre-installed on DGX OS
+ofedDriver:
+  deploy: false
+
+rdmaSharedDevicePlugin:
+  deploy: true
+  resources:
+    - name: rdma_shared_device_a
+      vendors: ["15b3"]
+      # devices: ["mlx5_0", "mlx5_1"]
+
+secondaryNetwork:
+  deploy: true
+  multus:
+    deploy: true
+  cniPlugins:
+    deploy: true
+  ipamPlugin:
+    deploy: true
+
+# Sriov optional — enable only with SR-IOV capable NICs + firmware
+sriovDevicePlugin:
+  deploy: false

@@ -13,6 +13,9 @@ Kubernetes cluster on NVIDIA DGX servers (DGX A100, H100, H200, B200, etc.).
 
 **Recommended for production:** 3 control-plane nodes + N DGX workers.
 
+For multi-DGX **factory** lifecycle, NVIDIA **Base Command Manager (BCM)** is often
+preferable to hand-rolled kubeadm; this directory documents the explicit DIY path.
+
 ## Prerequisites
 
 - Ubuntu 22.04 LTS or 24.04 LTS (DGX OS / DGX Base OS preferred on GPU nodes)

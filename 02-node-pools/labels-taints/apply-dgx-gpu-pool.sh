@@ -16,10 +16,10 @@ fi
 
 for node in "$@"; do
   echo "==> Configuring node pool on ${node}"
+  # Do not set nvidia.com/gpu.present — GPU Feature Discovery owns that label.
   kubectl label node "${node}" \
     node-pool=dgx-gpu \
     workload=gpu \
-    nvidia.com/gpu.present=true \
     --overwrite
 
   if [[ -n "${GPU_PRODUCT}" ]]; then

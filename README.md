@@ -1,277 +1,189 @@
 # dgx-server-cluster-config
 
-Kubernetes configuration for an **NVIDIA DGX server cluster** on bare metal:
-cluster bootstrap, node pools, GPU Operator, and PyTorch distributed
-training/inference.
+Kubernetes configuration for an **NVIDIA DGX (or DGX-like) server cluster** on bare metal:
+bootstrap, node pools, GPU Operator, networking, storage, scheduling, observability,
+and PyTorch training/inference workers.
+
+**Repository:** https://github.com/msarchioto/dgx-server-cluster-config
+
+---
+
+## Scope and non-goals
+
+| This repo is | This repo is not |
+|--------------|------------------|
+| Explicit **kubeadm DIY** layout you can audit and fork | A replacement for **NVIDIA Base Command Manager (BCM)** |
+| Lab → pilot path for single- and multi-node DGX | A full SuperPOD / multi-rack product distribution |
+| Manifests + scripts for GPU Operator, MIG-on-request, NCCL checks | Managed cloud GPU (GKE/EKS/AKS) modules |
+
+**When to use BCM instead:** multi-DGX production factories, provisioning at scale,
+NVIDIA-supported lifecycle. BCM can install Kubernetes (kubeadm-based under the hood);
+this repo teaches the pieces when you want full control or a custom OS image.
+
+---
+
+## Layout
 
 ```text
-dgx-server-cluster-config/
-├── 01-kubernetes-install/   # kubeadm bare-metal bootstrap
-├── 02-node-pools/           # labels, taints, RuntimeClass, priorities
-├── 03-nvidia-gpu-operator/  # Helm values + install script
-├── 04-pytorch/              # DDP training + inference examples
-├── docs/                    # architecture & checklist
-└── README.md                # this guide
+01-kubernetes-install/   # kubeadm bare-metal bootstrap
+02-node-pools/           # labels, taints, RuntimeClass, priorities
+03-nvidia-gpu-operator/  # Helm values + profiles (DGX OS / vanilla) + MIG
+04-pytorch/              # workers, DDP, JobSet, NCCL validation
+05-network-operator/     # multi-node RDMA / GPUDirect (optional)
+06-storage/              # StorageClasses + PVC examples
+07-scheduling/           # Kueue minimal queues
+08-observability/        # Prometheus/Grafana + DCGM ServiceMonitor
+docs/                    # architecture, checklist
 ```
 
 ---
 
-## What you get
-
-| Area | Contents |
-|------|----------|
-| **1. Kubernetes on bare metal** | Node prep scripts, containerd, kubeadm init/join configs, Calico/Cilium |
-| **2. Node pools** | DGX GPU vs system labels/taints, PriorityClasses, RuntimeClass, quotas |
-| **3. NVIDIA GPU Operator** | Helm values for DGX; **MIG on request** (split GPUs via node label); time-slice samples |
-| **4. PyTorch distributed** | Example training/inference **workers**, multi-node DDP, NCCL env, storage PVCs |
-| **5. Docs** | End-to-end guide (below), [architecture](docs/architecture.md), [checklist](docs/checklist.md) |
-
----
-
-## Prerequisites
-
-- One or more **DGX** (or GPU) servers + control-plane machines (can be DGX or CPU)
-- **Ubuntu 22.04/24.04** or **DGX OS**
-- SSH + sudo on all nodes
-- Workstation with `kubectl` and `helm` (Helm needed for GPU Operator)
-- Network plan: management CIDR, optional IB/RoCE fabric, non-overlapping pod CIDR
-
-Pinned defaults in this repo (override as needed):
-
-- Kubernetes **v1.31.x**
-- Calico **v3.28.x** (or Cilium values provided)
-- NGC PyTorch image **`nvcr.io/nvidia/pytorch:24.12-py3`**
-
----
-
-## End-to-end configuration guide
-
-### Phase 1 — Install Kubernetes on bare metal
-
-Details: [01-kubernetes-install/README.md](01-kubernetes-install/README.md)
-
-**On every node:**
-
-```bash
-cd 01-kubernetes-install
-sudo bash scripts/01-prepare-nodes.sh
-sudo bash scripts/02-install-containerd.sh
-sudo bash scripts/03-install-kubeadm.sh
-```
-
-**Edit before first control plane:**
-
-- `kubeadm/init-config.yaml` — replace every `CHANGE_ME`
-  - `advertiseAddress`, `controlPlaneEndpoint`, node name, cert SANs
-  - Confirm `podSubnet` (`192.168.0.0/16` matches Calico CR in this repo)
-
-**First control plane:**
-
-```bash
-sudo bash scripts/04-init-control-plane.sh
-mkdir -p $HOME/.kube
-sudo cp /etc/kubernetes/admin.conf $HOME/.kube/config
-sudo chown "$(id -u):$(id -g)" $HOME/.kube/config
-```
-
-**CNI (Calico example):**
-
-```bash
-bash cni/install-calico.sh
-# or: helm install cilium … -f cni/cilium-values.yaml
-```
-
-**Workers (DGX):**
-
-```bash
-# Copy generated/join-workers.sh from control plane, then:
-sudo bash scripts/05-join-workers.sh
-```
-
-**Verify:**
-
-```bash
-kubectl get nodes -o wide
-kubectl get pods -A
-```
-
-All nodes should be `Ready` before continuing.
-
----
-
-### Phase 2 — Node pool configuration
-
-Details: [02-node-pools/README.md](02-node-pools/README.md)
-
-```bash
-# Label (and taint) DGX workers
-bash 02-node-pools/labels-taints/apply-dgx-gpu-pool.sh dgx-01 dgx-02
-
-# Optional CPU/system nodes
-bash 02-node-pools/labels-taints/apply-system-pool.sh sys-01
-
-kubectl apply -f 02-node-pools/priority-classes.yaml
-kubectl apply -f 02-node-pools/runtime-class/nvidia.yaml
-```
-
-| Label | Meaning |
-|-------|---------|
-| `node-pool=dgx-gpu` | Schedulable GPU capacity for training/inference |
-| `workload=gpu` | Workload class selector |
-| `nvidia.com/gpu=true:NoSchedule` taint | Only GPU-tolerant pods land on DGX |
-
-GPU Operator will add richer `nvidia.com/*` labels once installed.
-
----
-
-### Phase 3 — NVIDIA GPU Operator
-
-Details: [03-nvidia-gpu-operator/README.md](03-nvidia-gpu-operator/README.md)
-
-1. Review `03-nvidia-gpu-operator/values.yaml`
-   - **DGX OS / existing drivers:** keep `driver.enabled: false` (default)
-   - **Vanilla Ubuntu without drivers:** set `driver.enabled: true`
-2. Install:
-
-```bash
-bash 03-nvidia-gpu-operator/scripts/install-gpu-operator.sh
-```
-
-3. Wait until nodes advertise GPUs:
-
-```bash
-kubectl get pods -n gpu-operator
-kubectl get node -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
-```
-
-4. Smoke test (full GPU):
-
-```bash
-kubectl apply -f 02-node-pools/examples/gpu-pod-smoke-test.yaml
-kubectl logs gpu-smoke-test
-kubectl delete pod gpu-smoke-test
-```
-
-5. **Optional — MIG (split GPUs on request)** for multi-tenant inference:
-
-```bash
-# Install/upgrade operator with MIG manager (default strategy: all-disabled)
-bash 03-nvidia-gpu-operator/scripts/install-gpu-operator-mig.sh
-
-# Split one node into 1g.10gb instances (pick strategy for your SKU)
-bash 03-nvidia-gpu-operator/scripts/enable-mig.sh --list
-bash 03-nvidia-gpu-operator/scripts/enable-mig.sh h100-80gb-all-1g.10gb dgx-01
-bash 03-nvidia-gpu-operator/scripts/enable-mig.sh --status dgx-01
-
-# Pod requests a slice: nvidia.com/mig-1g.10gb
-kubectl apply -f 03-nvidia-gpu-operator/manifests/examples/mig-slice-smoke-test.yaml
-
-# Restore full GPUs later
-bash 03-nvidia-gpu-operator/scripts/disable-mig.sh dgx-01
-```
-
-Details: [03-nvidia-gpu-operator/manifests/README-mig.md](03-nvidia-gpu-operator/manifests/README-mig.md).  
-Time-slicing (non-MIG soft share): `03-nvidia-gpu-operator/manifests/time-slicing-config.yaml`.
-
----
-
-### Phase 4 — PyTorch distributed training & inference
-
-Details: [04-pytorch/README.md](04-pytorch/README.md)
-
-**Apply shared config and example scripts:**
-
-```bash
-kubectl apply -f 04-pytorch/training/training-configmap.yaml
-kubectl apply -f 04-pytorch/examples/example-scripts-configmap.yaml
-```
-
-**Tune NCCL** in `pytorch-distributed-env` ConfigMap:
-
-- `NCCL_SOCKET_IFNAME` — data-plane interface (`eth0`, `ib0`, `ens…`)
-- `NCCL_IB_DISABLE=0` when InfiniBand/RoCE is available
-
-**Example workers (recommended templates):**
-
-```bash
-# Training worker — Job, full-node multi-GPU DDP smoke (default 8 GPUs)
-kubectl apply -f 04-pytorch/workers/example-training-worker.yaml
-kubectl logs -f job/example-training-worker -c training-worker
-
-# Inference worker — Deployment + Service + PDB (1 GPU, HTTP :8080)
-kubectl apply -f 04-pytorch/workers/example-inference-worker.yaml
-kubectl port-forward svc/example-inference-worker 8080:8080
-curl -s localhost:8080/healthz
-curl -s -X POST localhost:8080/v1/predict
-```
-
-See [04-pytorch/workers/README.md](04-pytorch/workers/README.md) for knobs, labels, and cleanup.
-
-**Additional training patterns:**
-
-```bash
-# Single-node multi-GPU Job (alternate)
-kubectl apply -f 04-pytorch/training/single-node-ddp-job.yaml
-
-# Multi-node (recommended: StatefulSet for stable DNS)
-kubectl apply -f 04-pytorch/training/multi-node-ddp-statefulset.yaml
-```
-
-Storage PVC templates: `04-pytorch/storage/` (set `storageClassName` for your platform).
-
----
-
-## Suggested apply order (summary)
+## Recommended install order (production-minded)
 
 ```text
-01 prepare + containerd + kubeadm
-02 kubeadm init → CNI → join workers
-03 node labels / taints / PriorityClass / RuntimeClass
-04 GPU Operator Helm install → GPU smoke test
-05 PyTorch ConfigMaps → DDP job → inference Deployment
+1. OS decision (DGX OS vs Ubuntu) + fabric firmware
+2. Host drivers / OFED model (preinstalled vs Operator-managed) — pick ONE
+3. containerd (+ host nvidia runtime if toolkit preinstalled)
+4. kubeadm + CNI
+5. Node labels/taints, PriorityClasses
+6. GPU Operator (correct profile) + GPU smoke test
+7. Network Operator (multi-node) + NCCL validation
+8. Storage classes + PVCs
+9. Observability (Prometheus + DCGM)
+10. Kueue (training admission)
+11. MIG only on designated inference nodes (optional)
+12. Training / inference workers
 ```
 
 Printable checklist: [docs/checklist.md](docs/checklist.md).
 
 ---
 
-## Configuration reference (placeholders)
+## Prerequisites
 
-Search the repo for `CHANGE_ME` and replace before production use:
+- DGX or GPU servers + control-plane machines
+- Ubuntu 22.04/24.04 or **DGX OS**
+- `kubectl`, `helm` 3 on admin workstation
+- NGC image pull access (or registry mirror)
 
-| Location | Values to set |
-|----------|----------------|
-| `01-kubernetes-install/kubeadm/init-config.yaml` | IPs, endpoint, hostnames, cert SANs |
-| `01-kubernetes-install/cni/cilium-values.yaml` | `k8sServiceHost` |
-| `04-pytorch/**` | GPU counts, image tags, PVC storage classes |
-| `03-nvidia-gpu-operator/values.yaml` | `driver.enabled`, optional nodeSelector |
+Pinned defaults (override with env):
 
----
-
-## Design notes for DGX
-
-1. **Drivers:** Prefer host drivers on DGX OS; let the Operator manage toolkit + device plugin.
-2. **Whole-node training:** Request all GPUs on a node (`nvidia.com/gpu: 8` on classic 8-GPU DGX) and use anti-affinity for multi-node ranks.
-3. **NCCL:** Validate multi-node with the smoke `train_ddp_min.py` before large jobs; use `NCCL_DEBUG=INFO` while debugging.
-4. **Isolation:** GPU taints + namespace ResourceQuotas keep system and tenant workloads separated.
-5. **Sharing:** MIG or time-slicing for inference density — enable deliberately per pool, not cluster-wide by accident.
+| Component | Default pin |
+|-----------|-------------|
+| Kubernetes | v1.31.4 |
+| GPU Operator chart | **v26.3.3** |
+| Network Operator chart | v25.1.0 |
+| NGC PyTorch | `nvcr.io/nvidia/pytorch:24.12-py3` |
 
 ---
 
-## Upload to GitHub (later)
+## Phase guides
+
+### 1 — Kubernetes (bare metal)
+
+[01-kubernetes-install/README.md](01-kubernetes-install/README.md)
 
 ```bash
-cd dgx-server-cluster-config
-git remote add origin git@github.com:<org>/dgx-server-cluster-config.git
-git push -u origin main
+sudo bash 01-kubernetes-install/scripts/01-prepare-nodes.sh
+sudo bash 01-kubernetes-install/scripts/02-install-containerd.sh
+sudo bash 01-kubernetes-install/scripts/03-install-kubeadm.sh
+# Edit kubeadm/init-config.yaml (CHANGE_ME)
+sudo bash 01-kubernetes-install/scripts/04-init-control-plane.sh
+bash 01-kubernetes-install/cni/install-calico.sh
+# join workers…
 ```
 
-Or create the empty repo in the GitHub UI / `gh repo create`, then push.
+DGX workers: larger kubelet reservations in  
+`01-kubernetes-install/kubeadm/kubelet-config-dgx-worker.yaml`.
+
+### 2 — Node pools
+
+```bash
+bash 02-node-pools/labels-taints/apply-dgx-gpu-pool.sh dgx-01 dgx-02
+kubectl apply -f 02-node-pools/priority-classes.yaml
+kubectl apply -f 02-node-pools/runtime-class/nvidia.yaml
+```
+
+Do **not** hand-set `nvidia.com/gpu.present` — GPU Feature Discovery owns it.
+
+### 3 — GPU Operator
+
+```bash
+# DGX OS (preinstalled driver + toolkit) — recommended on DGX
+bash 03-nvidia-gpu-operator/scripts/install-gpu-operator.sh dgx-os
+
+# Vanilla Ubuntu (Operator installs driver + toolkit)
+# bash 03-nvidia-gpu-operator/scripts/install-gpu-operator.sh vanilla
+
+kubectl apply -f 02-node-pools/examples/gpu-pod-smoke-test.yaml
+kubectl logs gpu-smoke-test && kubectl delete pod gpu-smoke-test
+```
+
+Profiles: `03-nvidia-gpu-operator/profiles/`. Chart pin: `GPU_OPERATOR_VERSION`.
+
+### 4 — Multi-node fabric (if training across nodes)
+
+```bash
+bash 05-network-operator/scripts/install-network-operator.sh
+# edit + apply 05-network-operator/manifests/nic-cluster-policy-example.yaml
+kubectl apply -f 04-pytorch/validation/nccl-test-multinode.yaml
+```
+
+### 5 — Storage & observability & queues
+
+```bash
+# see 06-storage/README.md
+# see 08-observability/README.md
+# see 07-scheduling/kueue/README.md
+```
+
+### 6 — MIG (optional, split GPUs on request)
+
+```bash
+bash 03-nvidia-gpu-operator/scripts/install-gpu-operator-mig.sh dgx-os
+bash 03-nvidia-gpu-operator/scripts/enable-mig.sh --list
+# drains node by default
+bash 03-nvidia-gpu-operator/scripts/enable-mig.sh all-1g.10gb dgx-01
+```
+
+Guide: [03-nvidia-gpu-operator/manifests/README-mig.md](03-nvidia-gpu-operator/manifests/README-mig.md).
+
+### 7 — PyTorch workers
+
+```bash
+kubectl apply -f 04-pytorch/training/training-configmap.yaml
+kubectl apply -f 04-pytorch/examples/example-scripts-configmap.yaml
+
+# 1-GPU smoke training worker
+kubectl apply -f 04-pytorch/workers/example-training-worker.yaml
+kubectl logs -f job/example-training-worker
+
+# Inference worker
+kubectl apply -f 04-pytorch/workers/example-inference-worker.yaml
+
+# Multi-node after NCCL OK: StatefulSet (preferred) or JobSet
+kubectl apply -f 04-pytorch/training/multi-node-ddp-statefulset.yaml
+# kubectl apply -f 04-pytorch/training/multi-node-jobset.yaml  # needs JobSet CRD
+
+# Full 8-GPU node training
+kubectl apply -f 04-pytorch/workers/overlays/full-node-training-patch.yaml
+```
+
+Indexed multi-node Job is **deprecated** (`multi-node-ddp-job.yaml` is a stub).
 
 ---
 
-## License
+## Design notes
 
-Configuration and scripts in this repository are provided as-is for operators of
-private DGX clusters. NVIDIA, DGX, CUDA, and NGC are trademarks of NVIDIA
-Corporation. Review NVIDIA software licenses for drivers, GPU Operator, and NGC images.
+1. **DGX OS:** `driver.enabled=false` and `toolkit.enabled=false` (profile `dgx-os`).
+2. **Smoke first:** examples default to **1 GPU**; full-node overlays are separate.
+3. **NCCL before multi-node training.**
+4. **MIG on request:** label `nvidia.com/mig.config=<strategy>`; manager drains GPU clients.
+5. **Kueue** reduces partial multi-pod training deadlocks.
+6. Prefer **BCM** for large multi-DGX lifecycle; this repo for transparent kubeadm control.
+
+---
+
+## Configuration placeholders
+
+Search for `CHANGE_ME` before production (kubeadm endpoints, NFS server, Grafana password, etc.).

@@ -62,19 +62,22 @@ etcd:
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 cgroupDriver: systemd
-# Reserve resources so system + kubelet stay healthy on busy GPU nodes.
-# Tune for DGX (large memory); lower on small control planes.
+# Reservations: control-plane defaults below. For DGX GPU workers use larger
+# values (see kubelet-config-dgx-worker.yaml) via JoinConfiguration or drop-in.
 systemReserved:
-  cpu: "1"
-  memory: "2Gi"
-  ephemeral-storage: "10Gi"
+  cpu: "2"
+  memory: "4Gi"
+  ephemeral-storage: "20Gi"
 kubeReserved:
-  cpu: "1"
-  memory: "2Gi"
-  ephemeral-storage: "10Gi"
+  cpu: "2"
+  memory: "4Gi"
+  ephemeral-storage: "20Gi"
 evictionHard:
-  memory.available: "500Mi"
+  memory.available: "1Gi"
   nodefs.available: "10%"
 maxPods: 110
 serializeImagePulls: false
-# Optional: registry mirrors / insecure registries via containerd, not kubelet
+# Topology-aware placement helps multi-GPU pods (optional; enable on GPU nodes)
+# cpuManagerPolicy: static
+# topologyManagerPolicy: single-numa-node
+

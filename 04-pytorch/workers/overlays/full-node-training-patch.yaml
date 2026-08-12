@@ -1,0 +1,87 @@
+# Full classic DGX node: 8 GPUs. Apply after base worker Job exists:
+#   kubectl patch job example-training-worker --type strategic --patch-file ...
+# Prefer: delete job and re-apply a copied manifest with these values.
+#
+# Strategic merge patch for a *new* Job (kubectl apply -f combined) —
+# use this as reference when editing example-training-worker.yaml for production.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: example-training-worker-fullnode
+  namespace: default
+  labels:
+    app: example-training-worker-fullnode
+    worker-role: training
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: example-training-worker-fullnode
+        worker-role: training
+    spec:
+      runtimeClassName: nvidia
+      priorityClassName: dgx-training
+      restartPolicy: Never
+      nodeSelector:
+        node-pool: dgx-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: worker-role
+                      operator: In
+                      values: ["training", "inference"]
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: training-worker
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              NPROC=8
+              torchrun --standalone --nnodes=1 --nproc_per_node="${NPROC}" \
+                /workspace/examples/train_ddp_min.py
+          env:
+            - name: NPROC_PER_NODE
+              value: "8"
+          envFrom:
+            - configMapRef:
+                name: pytorch-distributed-env
+                optional: true
+          resources:
+            requests:
+              cpu: "32"
+              memory: 256Gi
+              nvidia.com/gpu: "8"
+            limits:
+              cpu: "64"
+              memory: 512Gi
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi

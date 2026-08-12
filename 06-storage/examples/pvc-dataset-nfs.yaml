@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pytorch-dataset-nfs
+  namespace: default
+spec:
+  accessModes: ["ReadOnlyMany"]
+  storageClassName: dgx-nfs
+  resources:
+    requests:
+      storage: 2Ti

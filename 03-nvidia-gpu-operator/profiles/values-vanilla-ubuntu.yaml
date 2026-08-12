@@ -1,0 +1,14 @@
+# Profile: Vanilla Ubuntu (or non-DGX) workers without host NVIDIA stack.
+# Operator installs driver + toolkit into the cluster.
+#
+# helm upgrade --install ... -f values.yaml -f profiles/values-vanilla-ubuntu.yaml
+
+driver:
+  enabled: true
+  # Pin when needed, e.g.:
+  # version: "570.124.06"
+  rdma:
+    enabled: false
+
+toolkit:
+  enabled: true

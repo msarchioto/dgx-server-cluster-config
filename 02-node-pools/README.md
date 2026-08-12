@@ -39,7 +39,7 @@ kubectl apply -f resource-quotas-example.yaml   # optional, per namespace
 ```text
 node-pool=dgx-gpu|system|control-plane
 workload=gpu|system
-nvidia.com/gpu.present=true          # on GPU nodes (also set by GPU Operator)
+# nvidia.com/gpu.present is set by GPU Feature Discovery — do not set by hand
 ```
 
 ### Helpful for multi-SKU clusters

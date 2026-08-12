@@ -1,58 +1,58 @@
 # Deployment Checklist
 
+## Scope
+
+- [ ] Chose **kubeadm DIY** (this repo) vs **BCM** for multi-DGX lifecycle
+
 ## Pre-flight
 
-- [ ] Inventory DGX hostnames, management IPs, fabric IPs
-- [ ] Confirm Ubuntu/DGX OS version and kernel
-- [ ] Decide: host NVIDIA drivers vs GPU Operator drivers
-- [ ] Reserve pod CIDR and service CIDR (no overlap with LAN)
-- [ ] API endpoint DNS or VIP planned
-- [ ] NTP/chrony working on all nodes
-- [ ] Firewall rules allow cluster + fabric traffic
+- [ ] Hostnames, mgmt IPs, fabric IPs inventoried
+- [ ] DGX OS vs Ubuntu decided → GPU Operator **profile** chosen
+- [ ] Pod/service CIDR non-overlapping
+- [ ] API VIP/DNS planned
+- [ ] NTP OK; NGC pull path OK
 
-## Kubernetes install
+## Kubernetes
 
-- [ ] `01-prepare-nodes.sh` on all nodes
-- [ ] `02-install-containerd.sh` on all nodes
-- [ ] `03-install-kubeadm.sh` on all nodes (same version)
-- [ ] `init-config.yaml` filled (`CHANGE_ME` resolved)
-- [ ] Control plane initialized
-- [ ] CNI installed; all nodes `Ready`
-- [ ] Workers joined
-- [ ] `kubectl get nodes -o wide` looks correct
+- [ ] prepare / containerd / kubeadm on all nodes
+- [ ] `init-config.yaml` CHANGE_ME filled
+- [ ] CNI up; all nodes Ready
+- [ ] DGX workers use larger kubelet reserves (reference file applied)
 
 ## Node pools
 
-- [ ] DGX nodes labeled `node-pool=dgx-gpu`
-- [ ] Optional GPU taint applied
-- [ ] PriorityClasses applied
-- [ ] RuntimeClass `nvidia` applied (or created by Operator)
+- [ ] `node-pool=dgx-gpu` (no manual `gpu.present`)
+- [ ] GPU taint if desired
+- [ ] PriorityClasses + RuntimeClass
 
 ## GPU Operator
 
-- [ ] Helm values reviewed (`driver.enabled` correct for OS)
-- [ ] Operator installed; pods healthy in `gpu-operator`
-- [ ] Nodes show `nvidia.com/gpu` allocatable
-- [ ] Smoke pod `gpu-smoke-test` passes
-- [ ] (Optional) MIG overlay installed (`values-mig.yaml` + `mig-config.yaml`)
-- [ ] (Optional) `enable-mig.sh <strategy> <node>` → state success → slice smoke test
-- [ ] (Optional) `disable-mig.sh` restores full `nvidia.com/gpu`
+- [ ] Privileged PSA on `gpu-operator` ns
+- [ ] Chart pin (v26.3.3+) + profile (dgx-os / vanilla)
+- [ ] ClusterPolicy ready; GPUs allocatable
+- [ ] `gpu-smoke-test` PASSED
 
-## PyTorch
+## Multi-node fabric
 
-- [ ] Example scripts ConfigMap applied
-- [ ] Distributed env ConfigMap tuned (`NCCL_SOCKET_IFNAME`)
-- [ ] Example training worker Job succeeds (`workers/example-training-worker.yaml`)
-- [ ] Example inference worker healthy; `/healthz` OK (`workers/example-inference-worker.yaml`)
-- [ ] Single-node DDP job succeeds (optional alternate)
-- [ ] Multi-node StatefulSet (or Job) succeeds all-reduce
-- [ ] Dataset / checkpoint storage classes decided
+- [ ] Network Operator / OFED path decided
+- [ ] NicClusterPolicy applied if needed
+- [ ] NCCL multi-node validation OK bandwidth
 
-## Production hardening (follow-on)
+## Storage / observability / queues
 
-- [ ] etcd backups
-- [ ] Monitoring (Prometheus + DCGM dashboards)
-- [ ] Log aggregation
-- [ ] Image registry mirror / pull secrets
-- [ ] NetworkPolicies as needed
-- [ ] Upgrade runbook for Kubernetes + GPU Operator
+- [ ] StorageClass (local-path or NFS/parallel FS)
+- [ ] Prometheus + DCGM ServiceMonitor
+- [ ] Kueue ClusterQueue quotas match fleet
+
+## MIG (optional)
+
+- [ ] MIG overlay installed
+- [ ] `enable-mig.sh` drain success → slice smoke
+- [ ] `disable-mig.sh` restores full GPUs when needed
+
+## Workloads
+
+- [ ] Training worker 1-GPU smoke OK
+- [ ] Inference worker `/healthz` OK
+- [ ] Multi-node StatefulSet/JobSet only after NCCL OK
+- [ ] Full-node overlay only when intentional

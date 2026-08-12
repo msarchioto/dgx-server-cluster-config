@@ -1,0 +1,24 @@
+# Minimal kube-prometheus-stack values for GPU clusters.
+# helm upgrade --install kps prometheus-community/kube-prometheus-stack \
+#   -n monitoring --create-namespace -f kube-prometheus-stack-values.yaml
+
+grafana:
+  enabled: true
+  adminPassword: CHANGE_ME
+
+prometheus:
+  prometheusSpec:
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 15d
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+
+alertmanager:
+  enabled: true
+
+# Scrape GPU operator namespace
+prometheus-node-exporter:
+  enabled: true

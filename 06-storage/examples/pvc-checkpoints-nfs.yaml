@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pytorch-checkpoints-nfs
+  namespace: default
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: dgx-nfs
+  resources:
+    requests:
+      storage: 1Ti

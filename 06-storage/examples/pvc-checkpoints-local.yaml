@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pytorch-checkpoints
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: dgx-local-path
+  resources:
+    requests:
+      storage: 100Gi

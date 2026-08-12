@@ -1,16 +1,13 @@
-# Read-mostly dataset volume. Provisioner depends on your storage class
-# (NFS, CephFS, local PV, etc.). Prefer RWX for multi-node training.
+# Prefer 06-storage/examples/ for concrete StorageClasses.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pytorch-dataset
   namespace: default
-  labels:
-    app.kubernetes.io/part-of: dgx-server-cluster-config
 spec:
   accessModes:
     - ReadOnlyMany
-  # storageClassName: CHANGE_ME
+  storageClassName: dgx-nfs  # or dgx-local-path for lab RWO
   resources:
     requests:
       storage: 2Ti

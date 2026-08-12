@@ -1,0 +1,23 @@
+# Reference KubeletConfiguration for DGX GPU workers (large reservations).
+# Merge into JoinConfiguration or apply as kubelet config drop-in after join.
+# DGX nodes run NVSM, fabric, DCGM, toolkit — under-reserving causes node pressure.
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+systemReserved:
+  cpu: "8"
+  memory: "32Gi"
+  ephemeral-storage: "50Gi"
+kubeReserved:
+  cpu: "4"
+  memory: "16Gi"
+  ephemeral-storage: "50Gi"
+evictionHard:
+  memory.available: "4Gi"
+  nodefs.available: "10%"
+maxPods: 64
+serializeImagePulls: false
+# Uncomment for production multi-GPU locality (requires CPU manager static + guaranteed QoS pods)
+# cpuManagerPolicy: static
+# topologyManagerPolicy: single-numa-node
+# topologyManagerScope: pod

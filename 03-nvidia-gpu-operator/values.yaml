@@ -1,71 +1,62 @@
-# NVIDIA GPU Operator Helm values for DGX bare-metal clusters.
+# NVIDIA GPU Operator Helm values — base (shared by all profiles).
 # Chart: https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/getting-started.html
 #
-# Adjust driver.enabled for your OS (false recommended on DGX OS).
+# Pin chart version in scripts (default GPU_OPERATOR_VERSION=v26.3.3).
+#
+# Always layer a profile:
+#   -f values.yaml -f profiles/values-dgx-os.yaml          # DGX OS (recommended on DGX)
+#   -f values.yaml -f profiles/values-vanilla-ubuntu.yaml  # bare Ubuntu
+# Optional MIG:
+#   -f values-mig.yaml
+#
+# Namespace must allow privileged PSA (see scripts/install-gpu-operator.sh).
 
 operator:
   defaultRuntime: containerd
   runtimeClass: nvidia
 
-# --- Driver ---
-# DGX OS / preinstalled drivers: false
-# Vanilla Ubuntu without NVIDIA drivers: true
+# Defaults assume DGX-like host drivers; override with a profile.
 driver:
   enabled: false
-  # When enabled, pin a version validated for your GPUs, e.g.:
-  # version: "570.124.06"
   rdma:
     enabled: false
-  # Use only if you must rebuild for a custom kernel
-  # usePrecompiled: false
 
 toolkit:
   enabled: true
-  # env:
-  #   - name: CONTAINERD_CONFIG
-  #     value: /etc/containerd/config.toml
-  #   - name: CONTAINERD_SOCKET
-  #     value: /run/containerd/containerd.sock
+
+# CDI is the modern injection path (Operator default true on recent charts).
+# RuntimeClass "nvidia" remains for explicit pod specs in this repo.
+cdi:
+  enabled: true
 
 devicePlugin:
   enabled: true
-  # config:
-  #   name: time-slicing-config
-  #   default: any
 
 dcgm:
   enabled: true
 
 dcgmExporter:
   enabled: true
+  # Turned on when kube-prometheus-stack / Prometheus Operator is present
+  # (see 08-observability/). Safe if CRDs missing only after Operator install timing.
   serviceMonitor:
-    enabled: false  # set true if Prometheus Operator is installed
-  # resources: {}
+    enabled: true
 
 gfd:
-  enabled: true  # GPU Feature Discovery → rich node labels
+  enabled: true
 
-# MIG: keep disabled here for full-GPU default install.
-# To allow splitting GPUs on request, install with values-mig.yaml as well:
-#   helm upgrade ... -f values.yaml -f values-mig.yaml
-#   ./scripts/enable-mig.sh <strategy> <node>
+# Keep MIG manager off in base install to avoid surprise reconfigs.
+# Enable with values-mig.yaml when you want on-request splits.
 migManager:
   enabled: false
+
+mig:
+  strategy: mixed
 
 nodeStatusExporter:
   enabled: true
 
-validator:
-  # plugin:
-  #   env:
-  #     - name: WITH_WORKLOAD
-  #       value: "true"
-
-# DaemonSets only on GPU-capable nodes (after GFD/labeling).
-# Before first install, you may temporarily remove the selector so Operator
-# can land on all workers; then tighten.
 daemonsets:
-  # tolerations so GPU Operator pods schedule on tainted GPU nodes
   tolerations:
     - key: nvidia.com/gpu
       operator: Exists
@@ -73,16 +64,9 @@ daemonsets:
     - key: node-role.kubernetes.io/control-plane
       operator: Exists
       effect: NoSchedule
-  # Optional: restrict to GPU pool after labeling
-  # nodeSelector:
-  #   workload: gpu
 
-# Node Feature Discovery (often required by GPU Operator chart)
 nfd:
   enabled: true
 
-# Sandbox / vGPU (usually off for DGX bare metal dedicated)
 sandboxWorkloads:
   enabled: false
-
-# PSA / security context defaults are chart-managed; harden in production policies.

@@ -1,0 +1,52 @@
+# Training Job admitted via Kueue LocalQueue dgx-training
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kueue-training-smoke
+  namespace: default
+  labels:
+    kueue.x-k8s.io/queue-name: dgx-training
+    worker-role: training
+spec:
+  suspend: true  # Kueue unsuspends when admitted
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        worker-role: training
+    spec:
+      restartPolicy: Never
+      runtimeClassName: nvidia
+      priorityClassName: dgx-training
+      nodeSelector:
+        node-pool: dgx-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: pytorch
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              torchrun --standalone --nnodes=1 --nproc_per_node=1 \
+                /workspace/examples/train_ddp_min.py
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts

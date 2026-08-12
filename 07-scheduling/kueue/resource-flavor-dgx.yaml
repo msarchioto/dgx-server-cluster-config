@@ -1,0 +1,8 @@
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: dgx-gpu
+# Empty nodeLabels = all nodes; pin to GPU pool:
+spec:
+  nodeLabels:
+    node-pool: dgx-gpu

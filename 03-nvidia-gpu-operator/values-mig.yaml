@@ -1,29 +1,26 @@
-# Helm values overlay: enable MIG so GPUs can be split on request.
+# Helm overlay: enable MIG so GPUs can be split on request.
 #
-# Usage (after base install or together):
-#   kubectl apply -f manifests/mig-config.yaml
-#   helm upgrade --install gpu-operator nvidia/gpu-operator \
-#     -n gpu-operator \
-#     -f values.yaml \
-#     -f values-mig.yaml \
-#     --wait
+# Prefer operator/auto-generated per-node configs when available (GPU Operator
+# v26.3+). Custom ConfigMap is optional for exotic layouts only.
 #
-# Default strategy is all-disabled: nodes keep full GPUs until you label them.
-# See scripts/enable-mig.sh and manifests/README-mig.md.
+#   kubectl apply -f manifests/mig-config.yaml   # optional custom strategies
+#   helm upgrade ... -f values.yaml -f profiles/<profile>.yaml -f values-mig.yaml
+#
+# Default strategy all-disabled: full GPUs until node labeled.
+# Strategy names align with NVIDIA docs: all-disabled, all-1g.10gb, all-balanced, …
 
-# mixed = advertise profile-specific resources (nvidia.com/mig-1g.10gb, …)
-# single = all instances look like nvidia.com/gpu (only when every GPU has same layout)
 mig:
+  # mixed: profile-specific resources (nvidia.com/mig-1g.10gb) when split
   strategy: mixed
 
 migManager:
   enabled: true
   config:
+    # Use custom ConfigMap if applied; otherwise Operator may use generated
+    # <node>-mig-config (v26.3+) with hardware-discovered profiles.
     name: default-mig-parted-config
-    # Do not auto-split the whole cluster; wait for per-node label requests.
     default: all-disabled
 
-# Ensure device plugin is on (inherits rest from values.yaml)
 devicePlugin:
   enabled: true
 

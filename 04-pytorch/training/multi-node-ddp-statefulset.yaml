@@ -1,9 +1,5 @@
-# Preferred multi-node pattern: StatefulSet + headless Service for stable DNS.
-# Pods: pytorch-ddp-sts-0, pytorch-ddp-sts-1, ...
-# DNS:  pytorch-ddp-sts-0.pytorch-ddp-sts.<ns>.svc.cluster.local
-#
-# Scale replicas == nnodes. Delete the StatefulSet when the run finishes
-# (or use a Training Operator / JobSet in production).
+# Multi-node DDP via StatefulSet + headless Service (stable DNS).
+# Default: 2 nodes × 1 GPU smoke. Full node: set replicas, NNODES, NPROC, GPU count.
 ---
 apiVersion: v1
 kind: Service
@@ -72,22 +68,18 @@ spec:
             - |
               set -euo pipefail
               NNODES="${NNODES:-2}"
-              NPROC="${NPROC_PER_NODE:-8}"
-              # StatefulSet ordinal from hostname: pytorch-ddp-sts-0 → 0
+              NPROC="${NPROC_PER_NODE:-1}"
               ORDINAL="${HOSTNAME##*-}"
               RDZV_HOST="pytorch-ddp-sts-0.pytorch-ddp-sts"
-              RDZV_PORT="29500"
-              echo "hostname=${HOSTNAME} node_rank=${ORDINAL} nnodes=${NNODES}"
               torchrun \
                 --nnodes="${NNODES}" \
                 --nproc_per_node="${NPROC}" \
                 --node_rank="${ORDINAL}" \
                 --rdzv_backend=c10d \
-                --rdzv_endpoint="${RDZV_HOST}:${RDZV_PORT}" \
+                --rdzv_endpoint="${RDZV_HOST}:29500" \
                 --rdzv_id=pytorch-ddp-sts \
                 /workspace/examples/train_ddp_min.py
-              # Keep pod for log inspection after success; remove sleep for CI
-              echo "Training process exited; sleeping for log collection"
+              echo "done; sleeping for log collection"
               sleep 3600
           envFrom:
             - configMapRef:
@@ -96,20 +88,22 @@ spec:
             - name: NNODES
               value: "2"
             - name: NPROC_PER_NODE
-              value: "8"
+              value: "1"
           resources:
             requests:
-              cpu: "32"
-              memory: 256Gi
-              nvidia.com/gpu: "8"
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
             limits:
-              cpu: "64"
-              memory: 512Gi
-              nvidia.com/gpu: "8"
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
           volumeMounts:
             - name: examples
               mountPath: /workspace/examples
               readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
           securityContext:
             capabilities:
               add: ["IPC_LOCK"]
@@ -117,3 +111,7 @@ spec:
         - name: examples
           configMap:
             name: pytorch-example-scripts
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi

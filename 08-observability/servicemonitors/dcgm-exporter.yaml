@@ -1,0 +1,22 @@
+# ServiceMonitor for DCGM Exporter (GPU Operator).
+# Requires Prometheus Operator CRDs. Adjust labels to match your Prometheus
+# serviceMonitorSelector if not using kube-prometheus-stack defaults.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nvidia-dcgm-exporter
+  namespace: gpu-operator
+  labels:
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: nvidia-dcgm-exporter
+  namespaceSelector:
+    matchNames:
+      - gpu-operator
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

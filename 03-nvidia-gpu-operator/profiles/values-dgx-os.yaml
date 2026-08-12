@@ -1,0 +1,16 @@
+# Profile: NVIDIA DGX OS / Base OS with pre-installed driver + Container Toolkit.
+# NVIDIA docs: Pre-Installed NVIDIA GPU Drivers and NVIDIA Container Toolkit
+# https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/getting-started.html
+#
+# Before install: ensure host default runtime is nvidia (nvidia-ctk or toolkit config).
+# helm upgrade --install ... -f values.yaml -f profiles/values-dgx-os.yaml
+
+driver:
+  enabled: false
+
+toolkit:
+  enabled: false
+
+# Host may already run DCGM/NVSM; exporter still useful in-cluster
+dcgmExporter:
+  enabled: true

@@ -1,0 +1,17 @@
+# NFS RWX via nfs.csi.k8s.io or legacy NFS provisioner.
+# Install a CSI first, e.g. https://github.com/kubernetes-csi/csi-driver-nfs
+# Then set provisioner to match your install.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: dgx-nfs
+provisioner: nfs.csi.k8s.io
+parameters:
+  server: CHANGE_ME.nfs.server
+  share: /export/dgx
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+mountOptions:
+  - nfsvers=4.1
+  - hard
+  - noatime

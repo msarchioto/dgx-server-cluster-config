@@ -1,47 +1,25 @@
 #!/usr/bin/env bash
-# Install/upgrade GPU Operator with MIG support enabled (split on request).
+# Install/upgrade GPU Operator with MIG manager (split on request).
+# Usage: ./install-gpu-operator-mig.sh [dgx-os|vanilla]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-VALUES="${ROOT}/values.yaml"
-VALUES_MIG="${ROOT}/values-mig.yaml"
-MIG_CM="${ROOT}/manifests/mig-config.yaml"
-NAMESPACE="${NAMESPACE:-gpu-operator}"
-RELEASE="${RELEASE:-gpu-operator}"
-CHART_VERSION="${CHART_VERSION:-}"
+PROFILE="${1:-dgx-os}"
 
-command -v helm >/dev/null || { echo "helm is required" >&2; exit 1; }
-command -v kubectl >/dev/null || { echo "kubectl is required" >&2; exit 1; }
+echo "==> Optional custom MIG strategies (safe if operator also auto-generates)"
+kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace gpu-operator \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/audit=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  --overwrite
+kubectl apply -f "${ROOT}/manifests/mig-config.yaml"
 
-echo "==> Ensuring namespace ${NAMESPACE}"
-kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+echo "==> GPU Operator + MIG overlay"
+bash "${SCRIPT_DIR}/install-gpu-operator.sh" "${PROFILE}" \
+  --values "${ROOT}/values-mig.yaml"
 
-echo "==> Applying MIG strategies ConfigMap"
-kubectl apply -f "${MIG_CM}"
-
-echo "==> Adding NVIDIA Helm repo"
-helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
-helm repo update
-
-EXTRA=()
-if [[ -n "${CHART_VERSION}" ]]; then
-  EXTRA+=(--version "${CHART_VERSION}")
-fi
-
-echo "==> helm upgrade --install ${RELEASE} (values + values-mig)"
-helm upgrade --install "${RELEASE}" nvidia/gpu-operator \
-  --namespace "${NAMESPACE}" \
-  --values "${VALUES}" \
-  --values "${VALUES_MIG}" \
-  --wait \
-  --timeout 15m \
-  "${EXTRA[@]}"
-
-echo "==> GPU Operator (MIG-ready) installed"
-kubectl get pods -n "${NAMESPACE}" -o wide
-echo ""
-echo "Nodes keep full GPUs until you request a split:"
-echo "  ${SCRIPT_DIR}/enable-mig.sh --list"
-echo "  ${SCRIPT_DIR}/enable-mig.sh <strategy> <node>"
-echo "  ${SCRIPT_DIR}/enable-mig.sh --status"
+echo "==> MIG-ready. Nodes stay full-GPU until:"
+echo "    ${SCRIPT_DIR}/enable-mig.sh --list"
+echo "    ${SCRIPT_DIR}/enable-mig.sh all-1g.10gb <node>   # drains by default"

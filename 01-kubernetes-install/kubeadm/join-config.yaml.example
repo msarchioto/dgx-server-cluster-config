@@ -18,4 +18,5 @@ nodeRegistration:
   name: "CHANGE_ME.dgx-worker-hostname"
   kubeletExtraArgs:
     - name: node-labels
-      value: "nvidia.com/gpu.present=true,node-pool=dgx-gpu,workload=gpu"
+      # GFD sets nvidia.com/gpu.present after GPU Operator install
+      value: "node-pool=dgx-gpu,workload=gpu"
