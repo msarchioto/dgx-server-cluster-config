@@ -39,9 +39,10 @@
 
 - [ ] Example scripts ConfigMap applied
 - [ ] Distributed env ConfigMap tuned (`NCCL_SOCKET_IFNAME`)
-- [ ] Single-node DDP job succeeds
+- [ ] Example training worker Job succeeds (`workers/example-training-worker.yaml`)
+- [ ] Example inference worker healthy; `/healthz` OK (`workers/example-inference-worker.yaml`)
+- [ ] Single-node DDP job succeeds (optional alternate)
 - [ ] Multi-node StatefulSet (or Job) succeeds all-reduce
-- [ ] Inference Deployment healthy; `/healthz` OK
 - [ ] Dataset / checkpoint storage classes decided
 
 ## Production hardening (follow-on)

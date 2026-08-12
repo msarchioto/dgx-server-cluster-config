@@ -1,0 +1,245 @@
+# =============================================================================
+# Example INFERENCE WORKER
+# =============================================================================
+# Long-running GPU inference worker (Deployment + Service + optional PDB).
+# Role: serve HTTP predictions on 1 GPU; scale replicas for throughput.
+#
+# Prerequisites:
+#   kubectl apply -f ../examples/example-scripts-configmap.yaml
+#   kubectl apply -f ../../02-node-pools/priority-classes.yaml
+#   kubectl apply -f ../../02-node-pools/runtime-class/nvidia.yaml
+#
+# Apply:
+#   kubectl apply -f example-inference-worker.yaml
+#
+# Observe:
+#   kubectl get deploy,pod,svc -l worker-role=inference
+#   kubectl port-forward svc/example-inference-worker 8080:8080
+#   curl -s localhost:8080/healthz
+#   curl -s -X POST localhost:8080/v1/predict
+#
+# Customize before production:
+#   - image / entrypoint (TorchServe, Triton, vLLM, custom)
+#   - MODEL_PATH, replica count, GPU count per replica
+#   - model PVC mount, ingress, auth
+# =============================================================================
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: example-inference-worker
+  namespace: default
+  labels:
+    app: example-inference-worker
+    worker-role: inference
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-inference-worker-config
+  namespace: default
+  labels:
+    app: example-inference-worker
+    worker-role: inference
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+data:
+  WORKER_ROLE: "inference"
+  WORKER_NAME: "example-inference-worker"
+  PORT: "8080"
+  MODEL_DEVICE: "cuda:0"
+  # Placeholder paths for a real model server
+  MODEL_PATH: "/models/current"
+  MODEL_NAME: "example-model"
+  MAX_BATCH_SIZE: "8"
+  # Logging
+  LOG_LEVEL: "INFO"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-inference-worker
+  namespace: default
+  labels:
+    app: example-inference-worker
+    worker-role: inference
+    workload: inference
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: example-inference-worker
+      worker-role: inference
+  template:
+    metadata:
+      labels:
+        app: example-inference-worker
+        worker-role: inference
+        workload: inference
+      annotations:
+        prometheus.io/scrape: "false"
+        # prometheus.io/port: "8080"
+        # prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: example-inference-worker
+      runtimeClassName: nvidia
+      priorityClassName: dgx-inference-online
+      nodeSelector:
+        node-pool: dgx-gpu
+        workload: gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      # Spread replicas across nodes when scaled out
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: example-inference-worker
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: inference-worker
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          imagePullPolicy: IfNotPresent
+          workingDir: /workspace
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              echo "=== example inference worker ==="
+              echo "host=$(hostname)  model=${MODEL_NAME:-unknown}  device=${MODEL_DEVICE}"
+              nvidia-smi -L || true
+              # Replace with your server, e.g.:
+              #   torchserve --start --model-store /models ...
+              #   tritonserver --model-repository=/models
+              #   python -m vllm.entrypoints.openai.api_server --model ...
+              exec python /workspace/examples/infer_http_min.py
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: example-inference-worker-config
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          resources:
+            # One GPU per inference worker replica (typical). Use MIG for denser packing.
+            requests:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "16"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+            # Uncomment for real model weights:
+            # - name: models
+            #   mountPath: /models
+            #   readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["IPC_LOCK"]
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        # - name: models
+        #   persistentVolumeClaim:
+        #     claimName: inference-models
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-inference-worker
+  namespace: default
+  labels:
+    app: example-inference-worker
+    worker-role: inference
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+spec:
+  type: ClusterIP
+  selector:
+    app: example-inference-worker
+    worker-role: inference
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+# Keep at least one ready pod during voluntary disruptions when replicas >= 2
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: example-inference-worker
+  namespace: default
+  labels:
+    app: example-inference-worker
+    worker-role: inference
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: example-inference-worker
+      worker-role: inference

@@ -26,7 +26,7 @@ dgx-server-cluster-config/
 | **1. Kubernetes on bare metal** | Node prep scripts, containerd, kubeadm init/join configs, Calico/Cilium |
 | **2. Node pools** | DGX GPU vs system labels/taints, PriorityClasses, RuntimeClass, quotas |
 | **3. NVIDIA GPU Operator** | Helm `values.yaml` tuned for DGX (host drivers by default), MIG/time-slice samples |
-| **4. PyTorch distributed** | Single-node DDP Job, multi-node StatefulSet/Job, inference Deployment, NCCL env |
+| **4. PyTorch distributed** | Example training/inference **workers**, multi-node DDP, NCCL env, storage PVCs |
 | **5. Docs** | End-to-end guide (below), [architecture](docs/architecture.md), [checklist](docs/checklist.md) |
 
 ---
@@ -175,33 +175,30 @@ kubectl apply -f 04-pytorch/examples/example-scripts-configmap.yaml
 - `NCCL_SOCKET_IFNAME` — data-plane interface (`eth0`, `ib0`, `ens…`)
 - `NCCL_IB_DISABLE=0` when InfiniBand/RoCE is available
 
-**Single-node multi-GPU (one full DGX):**
+**Example workers (recommended templates):**
 
 ```bash
-# Edit GPU count / resources if not 8-GPU
-kubectl apply -f 04-pytorch/training/single-node-ddp-job.yaml
-kubectl logs -f job/pytorch-ddp-single
-```
+# Training worker — Job, full-node multi-GPU DDP smoke (default 8 GPUs)
+kubectl apply -f 04-pytorch/workers/example-training-worker.yaml
+kubectl logs -f job/example-training-worker -c training-worker
 
-**Multi-node (recommended: StatefulSet for stable DNS):**
-
-```bash
-# Edit replicas / NNODES / nproc_per_node to match fleet
-kubectl apply -f 04-pytorch/training/multi-node-ddp-statefulset.yaml
-kubectl logs -f statefulset/pytorch-ddp-sts -c pytorch
-# Tear down when finished:
-# kubectl delete -f 04-pytorch/training/multi-node-ddp-statefulset.yaml
-```
-
-An Indexed **Job** variant also exists: `training/multi-node-ddp-job.yaml`.
-
-**Inference:**
-
-```bash
-kubectl apply -f 04-pytorch/inference/inference-deployment.yaml
-kubectl port-forward svc/pytorch-inference 8080:8080
+# Inference worker — Deployment + Service + PDB (1 GPU, HTTP :8080)
+kubectl apply -f 04-pytorch/workers/example-inference-worker.yaml
+kubectl port-forward svc/example-inference-worker 8080:8080
 curl -s localhost:8080/healthz
 curl -s -X POST localhost:8080/v1/predict
+```
+
+See [04-pytorch/workers/README.md](04-pytorch/workers/README.md) for knobs, labels, and cleanup.
+
+**Additional training patterns:**
+
+```bash
+# Single-node multi-GPU Job (alternate)
+kubectl apply -f 04-pytorch/training/single-node-ddp-job.yaml
+
+# Multi-node (recommended: StatefulSet for stable DNS)
+kubectl apply -f 04-pytorch/training/multi-node-ddp-statefulset.yaml
 ```
 
 Storage PVC templates: `04-pytorch/storage/` (set `storageClassName` for your platform).

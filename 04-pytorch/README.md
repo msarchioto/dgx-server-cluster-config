@@ -29,9 +29,14 @@ This directory provides Kubernetes manifests for:
 
 ```text
 04-pytorch/
+├── workers/                         # ★ start here for example workers
+│   ├── example-training-worker.yaml # Job: multi-GPU training worker
+│   ├── example-inference-worker.yaml# Deployment+Service: inference worker
+│   └── README.md
 ├── training/
 │   ├── single-node-ddp-job.yaml      # 1 node, N GPUs
 │   ├── multi-node-ddp-job.yaml       # M nodes via torchrun rdzv
+│   ├── multi-node-ddp-statefulset.yaml
 │   └── training-configmap.yaml       # shared NCCL / torch env
 ├── inference/
 │   ├── inference-deployment.yaml    # serving Deployment + Service
@@ -41,7 +46,33 @@ This directory provides Kubernetes manifests for:
 │   └── pvc-checkpoints.yaml
 └── examples/
     ├── train_ddp_min.py             # minimal DDP script for smoke tests
-    └── infer_http_min.py            # minimal HTTP inference stub
+    ├── infer_http_min.py            # minimal HTTP inference stub
+    └── example-scripts-configmap.yaml
+```
+
+## Example workers (recommended starting point)
+
+Self-contained **training** and **inference** worker templates with ServiceAccounts,
+worker ConfigMaps, labels (`worker-role=training|inference`), probes (inference),
+and `/dev/shm` for NCCL/DataLoader.
+
+Details: [workers/README.md](workers/README.md)
+
+```bash
+# Shared deps
+kubectl apply -f ../02-node-pools/priority-classes.yaml
+kubectl apply -f ../02-node-pools/runtime-class/nvidia.yaml
+kubectl apply -f training/training-configmap.yaml
+kubectl apply -f examples/example-scripts-configmap.yaml
+
+# Training worker (1 node × 8 GPUs by default — edit resources for smoke tests)
+kubectl apply -f workers/example-training-worker.yaml
+kubectl logs -f job/example-training-worker -c training-worker
+
+# Inference worker (1 GPU, HTTP :8080)
+kubectl apply -f workers/example-inference-worker.yaml
+kubectl port-forward svc/example-inference-worker 8080:8080
+curl -s localhost:8080/healthz
 ```
 
 ## Single-node multi-GPU (quick start)
