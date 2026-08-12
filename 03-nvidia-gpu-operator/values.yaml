@@ -45,8 +45,12 @@ dcgmExporter:
 gfd:
   enabled: true  # GPU Feature Discovery → rich node labels
 
+# MIG: keep disabled here for full-GPU default install.
+# To allow splitting GPUs on request, install with values-mig.yaml as well:
+#   helm upgrade ... -f values.yaml -f values-mig.yaml
+#   ./scripts/enable-mig.sh <strategy> <node>
 migManager:
-  enabled: false  # enable for MIG multi-tenancy on A100/H100
+  enabled: false
 
 nodeStatusExporter:
   enabled: true

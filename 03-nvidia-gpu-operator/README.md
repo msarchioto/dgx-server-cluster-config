@@ -55,11 +55,41 @@ For multi-node distributed training:
 
 ## MIG and time-slicing
 
-- **MIG**: partition A100/H100 for multi-tenant inference. Enable MIG manager in values
-  and apply a MIG strategy ConfigMap (`manifests/mig-config.yaml`).
-- **Time-slicing**: share a full GPU across pods. See `manifests/time-slicing-config.yaml`.
+### MIG — split GPUs on request (recommended path)
 
-Only enable one sharing strategy intentionally; document which pool uses which mode.
+Full guide: [manifests/README-mig.md](manifests/README-mig.md)
+
+Nodes keep **full GPUs by default**. You split only the nodes you label.
+
+```bash
+# MIG-capable install (or upgrade existing operator)
+./scripts/install-gpu-operator-mig.sh
+
+# List strategies / apply a split / restore full GPUs
+./scripts/enable-mig.sh --list
+./scripts/enable-mig.sh h100-80gb-all-1g.10gb dgx-01
+./scripts/enable-mig.sh --status dgx-01
+./scripts/disable-mig.sh dgx-01
+
+# Workload that requests a slice
+kubectl apply -f manifests/examples/mig-slice-smoke-test.yaml
+```
+
+| File | Purpose |
+|------|---------|
+| `manifests/mig-config.yaml` | Named layouts (A100/H100, balanced, all-disabled) |
+| `values-mig.yaml` | Helm overlay: `migManager` + `mig.strategy=mixed` |
+| `scripts/enable-mig.sh` | Label nodes to request a strategy |
+| `scripts/disable-mig.sh` | Back to full GPUs (`all-disabled`) |
+| `manifests/examples/mig-*.yaml` | Smoke test + inference on slices |
+
+Pods request profile resources after a split, e.g. `nvidia.com/mig-1g.10gb: 1`.
+
+### Time-slicing
+
+- Soft-share a full GPU across pods (no MIG-level isolation). See `manifests/time-slicing-config.yaml`.
+
+**Do not** enable MIG and time-slicing on the same GPUs.
 
 ## Verification
 

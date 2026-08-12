@@ -34,6 +34,9 @@
 - [ ] Operator installed; pods healthy in `gpu-operator`
 - [ ] Nodes show `nvidia.com/gpu` allocatable
 - [ ] Smoke pod `gpu-smoke-test` passes
+- [ ] (Optional) MIG overlay installed (`values-mig.yaml` + `mig-config.yaml`)
+- [ ] (Optional) `enable-mig.sh <strategy> <node>` → state success → slice smoke test
+- [ ] (Optional) `disable-mig.sh` restores full `nvidia.com/gpu`
 
 ## PyTorch
 

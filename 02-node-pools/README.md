@@ -90,6 +90,18 @@ allow workloads on control plane (lab only).
 - Set `nvidia.com/gpu` resource requests equal to GPUs needed; never oversubscribe
   unless using time-slicing config intentionally.
 
+### MIG on request
+
+Nodes stay on full GPUs until you request a split (see
+[03-nvidia-gpu-operator/manifests/README-mig.md](../03-nvidia-gpu-operator/manifests/README-mig.md)):
+
+```bash
+./03-nvidia-gpu-operator/scripts/enable-mig.sh h100-80gb-all-1g.10gb dgx-01
+```
+
+That sets `mig-mode=enabled` and `nvidia.com/mig.config=<strategy>`. MIG pods should
+`nodeSelector: mig-mode: enabled` and request `nvidia.com/mig-<profile>` resources.
+
 ## Verification
 
 ```bash

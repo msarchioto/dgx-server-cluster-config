@@ -1,0 +1,43 @@
+# Smoke-test a single MIG slice (mixed strategy).
+# Edit the resource name to match your enabled strategy, e.g.:
+#   nvidia.com/mig-1g.10gb   (A100-80GB / H100 1g.10gb)
+#   nvidia.com/mig-1g.5gb    (A100-40GB)
+#   nvidia.com/mig-2g.20gb
+#   nvidia.com/mig-3g.40gb
+#
+# Prerequisites:
+#   enable-mig.sh <strategy> <node>   # and wait for success
+#
+# Apply:
+#   kubectl apply -f mig-slice-smoke-test.yaml
+#   kubectl logs mig-slice-smoke-test
+#   kubectl delete pod mig-slice-smoke-test
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mig-slice-smoke-test
+  namespace: default
+  labels:
+    app: mig-slice-smoke-test
+    worker-role: mig-smoke
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+spec:
+  restartPolicy: Never
+  runtimeClassName: nvidia
+  priorityClassName: dgx-batch
+  nodeSelector:
+    node-pool: dgx-gpu
+    # Prefer nodes that currently have MIG enabled
+    mig-mode: enabled
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+  containers:
+    - name: cuda-vector-add
+      image: nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0
+      resources:
+        limits:
+          # CHANGE_ME: must match a profile present after enable-mig.sh
+          nvidia.com/mig-1g.10gb: 1

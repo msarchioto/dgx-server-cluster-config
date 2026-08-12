@@ -22,7 +22,7 @@ dgx-server-cluster-config/
 |------|----------|
 | **1. Kubernetes on bare metal** | Node prep scripts, containerd, kubeadm init/join configs, Calico/Cilium |
 | **2. Node pools** | DGX GPU vs system labels/taints, PriorityClasses, RuntimeClass, quotas |
-| **3. NVIDIA GPU Operator** | Helm `values.yaml` tuned for DGX (host drivers by default), MIG/time-slice samples |
+| **3. NVIDIA GPU Operator** | Helm values for DGX; **MIG on request** (split GPUs via node label); time-slice samples |
 | **4. PyTorch distributed** | Example training/inference **workers**, multi-node DDP, NCCL env, storage PVCs |
 | **5. Docs** | End-to-end guide (below), [architecture](docs/architecture.md), [checklist](docs/checklist.md) |
 
@@ -144,7 +144,7 @@ kubectl get pods -n gpu-operator
 kubectl get node -o custom-columns=NAME:.metadata.name,GPU:.status.allocatable.nvidia\\.com/gpu
 ```
 
-4. Smoke test:
+4. Smoke test (full GPU):
 
 ```bash
 kubectl apply -f 02-node-pools/examples/gpu-pod-smoke-test.yaml
@@ -152,7 +152,26 @@ kubectl logs gpu-smoke-test
 kubectl delete pod gpu-smoke-test
 ```
 
-Optional: MIG / time-slicing manifests under `03-nvidia-gpu-operator/manifests/`.
+5. **Optional — MIG (split GPUs on request)** for multi-tenant inference:
+
+```bash
+# Install/upgrade operator with MIG manager (default strategy: all-disabled)
+bash 03-nvidia-gpu-operator/scripts/install-gpu-operator-mig.sh
+
+# Split one node into 1g.10gb instances (pick strategy for your SKU)
+bash 03-nvidia-gpu-operator/scripts/enable-mig.sh --list
+bash 03-nvidia-gpu-operator/scripts/enable-mig.sh h100-80gb-all-1g.10gb dgx-01
+bash 03-nvidia-gpu-operator/scripts/enable-mig.sh --status dgx-01
+
+# Pod requests a slice: nvidia.com/mig-1g.10gb
+kubectl apply -f 03-nvidia-gpu-operator/manifests/examples/mig-slice-smoke-test.yaml
+
+# Restore full GPUs later
+bash 03-nvidia-gpu-operator/scripts/disable-mig.sh dgx-01
+```
+
+Details: [03-nvidia-gpu-operator/manifests/README-mig.md](03-nvidia-gpu-operator/manifests/README-mig.md).  
+Time-slicing (non-MIG soft share): `03-nvidia-gpu-operator/manifests/time-slicing-config.yaml`.
 
 ---
 

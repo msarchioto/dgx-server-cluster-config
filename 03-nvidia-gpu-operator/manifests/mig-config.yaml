@@ -1,21 +1,160 @@
-# Example MIG configuration for A100/H100 (all-balanced style).
-# Enable migManager in values.yaml and follow NVIDIA docs to apply strategy.
-# Profiles vary by GPU SKU — validate against nvidia-smi mig -lgip on the node.
+# MIG (Multi-Instance GPU) partition strategies for GPU Operator mig-manager.
+#
+# How "split if requested" works:
+#   1. Apply this ConfigMap into the gpu-operator namespace.
+#   2. Install/upgrade with values-mig.yaml (migManager on, strategy mixed).
+#   3. Default node strategy is all-disabled (full GPUs, no split).
+#   4. To split a node, label it with a strategy name:
+#        kubectl label node <node> nvidia.com/mig.config=<strategy> --overwrite
+#   5. Workloads request slices, e.g. nvidia.com/mig-1g.10gb: 1
+#   6. To restore full GPUs:
+#        kubectl label node <node> nvidia.com/mig.config=all-disabled --overwrite
+#
+# IMPORTANT: Profile names and max counts depend on the GPU SKU.
+# Validate on a node first:
+#   nvidia-smi mig -lgip
+#   nvidia-smi -L
+#
+# This ConfigMap ships common A100-80GB and H100-80GB layouts. Delete or ignore
+# strategies that do not apply to your fleet. Wrong profiles make mig-manager fail.
+#
+# Apply:
+#   kubectl apply -f mig-config.yaml
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: default-mig-parted-config
   namespace: gpu-operator
+  labels:
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+    app.kubernetes.io/component: mig
 data:
   config.yaml: |
     version: v1
     mig-configs:
+      # ------------------------------------------------------------------
+      # Always available: no MIG (full physical GPUs → nvidia.com/gpu)
+      # ------------------------------------------------------------------
       all-disabled:
         - devices: all
           mig-enabled: false
-      # Example only — adjust profiles for your GPU (A100 40G/80G, H100, etc.)
-      all-1g.5gb:
+
+      # ------------------------------------------------------------------
+      # A100 40GB  (profiles: 1g.5gb, 2g.10gb, 3g.20gb, 4g.20gb, 7g.40gb)
+      # ------------------------------------------------------------------
+      a100-40gb-all-1g.5gb:
         - devices: all
           mig-enabled: true
           mig-devices:
             "1g.5gb": 7
+
+      a100-40gb-all-2g.10gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.10gb": 3
+
+      a100-40gb-all-3g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.20gb": 2
+
+      a100-40gb-balanced:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.5gb": 2
+            "2g.10gb": 1
+            "3g.20gb": 1
+
+      # ------------------------------------------------------------------
+      # A100 80GB  (profiles: 1g.10gb, 2g.20gb, 3g.40gb, 4g.40gb, 7g.80gb)
+      # Typical DGX A100 80GB
+      # ------------------------------------------------------------------
+      a100-80gb-all-1g.10gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 7
+
+      a100-80gb-all-2g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.20gb": 3
+
+      a100-80gb-all-3g.40gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.40gb": 2
+
+      a100-80gb-all-7g.80gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.80gb": 1
+
+      a100-80gb-balanced:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 2
+            "2g.20gb": 1
+            "3g.40gb": 1
+
+      # ------------------------------------------------------------------
+      # H100 80GB  (profiles often: 1g.10gb, 1g.20gb, 2g.20gb, 3g.40gb, 7g.80gb)
+      # Typical DGX H100 — confirm with nvidia-smi mig -lgip
+      # ------------------------------------------------------------------
+      h100-80gb-all-1g.10gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 7
+
+      h100-80gb-all-1g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.20gb": 4
+
+      h100-80gb-all-2g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.20gb": 3
+
+      h100-80gb-all-3g.40gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.40gb": 2
+
+      h100-80gb-all-7g.80gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.80gb": 1
+
+      h100-80gb-balanced:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 2
+            "2g.20gb": 1
+            "3g.40gb": 1
+
+      # ------------------------------------------------------------------
+      # Mixed devices on one node (example: GPU 0–3 split small, 4–7 full off)
+      # Adjust device indices to match your board. devices: [0,1,2,3]
+      # ------------------------------------------------------------------
+      # example-partial-mig:
+      #   - devices: [0, 1, 2, 3]
+      #     mig-enabled: true
+      #     mig-devices:
+      #       "1g.10gb": 7
+      #   - devices: [4, 5, 6, 7]
+      #     mig-enabled: false

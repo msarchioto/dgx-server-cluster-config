@@ -1,0 +1,122 @@
+# Example inference worker that requests a MIG slice instead of a full GPU.
+# Use after splitting a node with enable-mig.sh.
+#
+# Edit:
+#   - nvidia.com/mig-* resource name/count
+#   - image / command for your model server
+#   - nodeSelector mig strategy label if you pin to a layout
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-mig-inference-worker-config
+  namespace: default
+  labels:
+    app: example-mig-inference-worker
+    worker-role: inference
+data:
+  WORKER_ROLE: "inference"
+  PORT: "8080"
+  MODEL_DEVICE: "cuda:0"
+  MODEL_NAME: "example-mig-model"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-mig-inference-worker
+  namespace: default
+  labels:
+    app: example-mig-inference-worker
+    worker-role: inference
+    gpu-mode: mig
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: example-mig-inference-worker
+  template:
+    metadata:
+      labels:
+        app: example-mig-inference-worker
+        worker-role: inference
+        gpu-mode: mig
+    spec:
+      runtimeClassName: nvidia
+      priorityClassName: dgx-inference-online
+      nodeSelector:
+        node-pool: dgx-gpu
+        mig-mode: enabled
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: example-mig-inference-worker
+      containers:
+        - name: inference-worker
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              echo "MIG inference worker on $(hostname)"
+              nvidia-smi -L || true
+              exec python /workspace/examples/infer_http_min.py
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: example-mig-inference-worker-config
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: "2"
+              memory: 8Gi
+              # CHANGE_ME to match enabled MIG profile on the node
+              nvidia.com/mig-1g.10gb: 1
+            limits:
+              cpu: "8"
+              memory: 32Gi
+              nvidia.com/mig-1g.10gb: 1
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-mig-inference-worker
+  namespace: default
+  labels:
+    app: example-mig-inference-worker
+spec:
+  type: ClusterIP
+  selector:
+    app: example-mig-inference-worker
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
