@@ -26,15 +26,18 @@ See [workers/README.md](workers/README.md).
 
 ## Multi-node
 
-| Manifest | Status |
-|----------|--------|
-| `training/multi-node-ddp-statefulset.yaml` | **Recommended** (stable DNS) |
-| `training/multi-node-jobset.yaml` | Needs JobSet CRD |
-| `training/multi-node-ddp-job.yaml` | **Deprecated** stub |
+| Manifest | Master / rdzv (node rank 0) | Notes |
+|----------|----------------------------|--------|
+| `training/multi-node-ddp-job.yaml` | `JOB_COMPLETION_INDEX=0` + DNS `pytorch-ddp-multi-0.<svc>` | Indexed Job; hostname set by Job controller |
+| `training/multi-node-ddp-statefulset.yaml` | Ordinal `0` via hostname | Stable pod identity |
+| `training/multi-node-jobset.yaml` | JobSet completion index `0` | Needs JobSet CRD |
 
 ```bash
 kubectl apply -f validation/nccl-test-multinode.yaml   # first
-kubectl apply -f training/multi-node-ddp-statefulset.yaml
+kubectl apply -f training/training-configmap.yaml
+kubectl apply -f examples/example-scripts-configmap.yaml
+kubectl apply -f training/multi-node-ddp-job.yaml
+# or: training/multi-node-ddp-statefulset.yaml
 ```
 
 ## Kueue

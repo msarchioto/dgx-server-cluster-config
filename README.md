@@ -161,15 +161,16 @@ kubectl logs -f job/example-training-worker
 # Inference worker
 kubectl apply -f 04-pytorch/workers/example-inference-worker.yaml
 
-# Multi-node after NCCL OK: StatefulSet (preferred) or JobSet
-kubectl apply -f 04-pytorch/training/multi-node-ddp-statefulset.yaml
+# Multi-node after NCCL OK (Indexed Job, StatefulSet, or JobSet)
+kubectl apply -f 04-pytorch/training/multi-node-ddp-job.yaml
+# kubectl apply -f 04-pytorch/training/multi-node-ddp-statefulset.yaml
 # kubectl apply -f 04-pytorch/training/multi-node-jobset.yaml  # needs JobSet CRD
 
 # Full 8-GPU node training
 kubectl apply -f 04-pytorch/workers/overlays/full-node-training-patch.yaml
 ```
 
-Indexed multi-node Job is **deprecated** (`multi-node-ddp-job.yaml` is a stub).
+Multi-node **master / rdzv** = node rank **0** (Indexed Job: `JOB_COMPLETION_INDEX=0` + DNS `…-0.<service>`).
 
 ---
 
