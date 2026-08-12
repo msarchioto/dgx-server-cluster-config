@@ -4,9 +4,6 @@ Kubernetes configuration for an **NVIDIA DGX server cluster** on bare metal:
 cluster bootstrap, node pools, GPU Operator, and PyTorch distributed
 training/inference.
 
-Upload this repository to GitHub when ready; nothing here requires a remote
-to apply manifests locally.
-
 ```text
 dgx-server-cluster-config/
 ├── 01-kubernetes-install/   # kubeadm bare-metal bootstrap
