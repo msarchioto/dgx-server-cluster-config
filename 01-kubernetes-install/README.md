@@ -86,11 +86,12 @@ sudo bash scripts/05-join-workers.sh
 
 ## DGX-specific notes
 
-1. **Network**: Prefer a dedicated cluster/pod network separate from the management NIC. For multi-node NCCL, configure RoCE/InfiniBand and expose NIC resources via GPU Operator (see `03-nvidia-gpu-operator`).
-2. **Huge pages / CPU isolation**: Optional for low-latency inference; see node pool docs.
+1. **Network**: Prefer a dedicated cluster/pod network separate from the management NIC. For multi-node NCCL, install Network Operator (`05-network-operator`) and validate with NCCL tests before training.
+2. **Huge pages / CPU isolation**: Optional; see `kubelet-config-dgx-worker.yaml` for topology manager flags.
 3. **Firewall**: Allow cluster ports; do not block GPU peer traffic on the fabric.
 4. **SELinux/AppArmor**: DGX OS defaults usually work; test GPU Operator pods if you harden further.
-5. **kubelet reserved resources**: Set CPU/memory reservation on control plane and large DGX nodes (see `kubeadm` extraArgs).
+5. **kubelet reserved resources**: Use larger reserves on DGX workers (`kubeadm/kubelet-config-dgx-worker.yaml`); control-plane defaults in `init-config.yaml` are smaller.
+6. **DGX OS toolkit**: If Container Toolkit is preinstalled, use GPU Operator profile `dgx-os` (`toolkit.enabled=false`) and set host default runtime to `nvidia`.
 
 ## Verification
 
