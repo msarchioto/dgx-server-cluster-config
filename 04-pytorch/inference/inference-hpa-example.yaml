@@ -1,0 +1,21 @@
+# Example HPA on CPU (GPU metrics need Prometheus + custom metrics adapter).
+# Prefer custom metrics (requests/sec, queue depth) for production GPU serving.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pytorch-inference
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pytorch-inference
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

@@ -1,0 +1,32 @@
+# Calico install for kubeadm clusters with podSubnet 192.168.0.0/16.
+# Source pattern: official Tigera operator + custom resources.
+# For production fabrics (BGP, eBPF, WireGuard) customize after base install.
+#
+# Apply:
+#   kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/tigera-operator.yaml
+#   kubectl apply -f calico.yaml
+#
+# Or use the monolithic manifest approach below via remote apply documented in README.
+# This file holds the Installation CR for the operator.
+
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    ipPools:
+      - blockSize: 26
+        cidr: 192.168.0.0/16
+        encapsulation: VXLANCrossSubnet
+        natOutgoing: Enabled
+        nodeSelector: all()
+  # On DGX clusters with a dedicated fabric NIC for pods, set:
+  # nodeAddressAutodetectionV4:
+  #   interface: "enp*"   # or use canReach / cidrs
+---
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}

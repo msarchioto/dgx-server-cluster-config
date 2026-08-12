@@ -1,0 +1,142 @@
+# Generated-style ConfigMap embedding smoke-test scripts.
+# Apply: kubectl apply -f example-scripts-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pytorch-example-scripts
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+data:
+  train_ddp_min.py: |
+    #!/usr/bin/env python3
+    """Minimal multi-GPU / multi-node DDP smoke test for DGX Kubernetes jobs."""
+    from __future__ import annotations
+
+    import os
+    import time
+
+    import torch
+    import torch.distributed as dist
+
+
+    def main() -> None:
+        backend = "nccl" if torch.cuda.is_available() else "gloo"
+        dist.init_process_group(backend=backend)
+
+        rank = dist.get_rank()
+        world = dist.get_world_size()
+        local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
+            device = torch.device("cuda", local_rank)
+            dev_name = torch.cuda.get_device_name(local_rank)
+        else:
+            device = torch.device("cpu")
+            dev_name = "cpu"
+
+        print(
+            f"[rank {rank}/{world}] local_rank={local_rank} device={device} ({dev_name})",
+            flush=True,
+        )
+
+        tensor = torch.ones(1, device=device) * (rank + 1)
+        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+        expected = float(world * (world + 1) / 2)
+        got = float(tensor.item())
+
+        if abs(got - expected) > 1e-3:
+            raise RuntimeError(f"all_reduce mismatch: got {got}, expected {expected}")
+
+        if device.type == "cuda":
+            a = torch.randn(1024, 1024, device=device)
+            b = torch.randn(1024, 1024, device=device)
+            for _ in range(20):
+                a = a @ b
+            torch.cuda.synchronize(device)
+
+        dist.barrier()
+        if rank == 0:
+            print(f"DDP smoke OK: world_size={world} all_reduce_sum={got}", flush=True)
+            time.sleep(1)
+
+        dist.destroy_process_group()
+
+
+    if __name__ == "__main__":
+        main()
+
+  infer_http_min.py: |
+    #!/usr/bin/env python3
+    """Minimal GPU-aware HTTP inference stub for Kubernetes readiness probes."""
+    from __future__ import annotations
+
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import torch
+
+
+    DEVICE = os.environ.get("MODEL_DEVICE", "cuda:0" if torch.cuda.is_available() else "cpu")
+    PORT = int(os.environ.get("PORT", "8080"))
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):
+            return
+
+        def _json(self, code, payload):
+            body = json.dumps(payload).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path in ("/healthz", "/readyz"):
+                ok = True
+                detail = {"device": DEVICE}
+                if DEVICE.startswith("cuda"):
+                    ok = torch.cuda.is_available()
+                    if ok:
+                        detail["gpu"] = torch.cuda.get_device_name(0)
+                self._json(200 if ok else 503, {"status": "ok" if ok else "degraded", **detail})
+                return
+            if self.path == "/v1/info":
+                self._json(
+                    200,
+                    {
+                        "torch": torch.__version__,
+                        "cuda": torch.version.cuda,
+                        "device": DEVICE,
+                        "gpu_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+                    },
+                )
+                return
+            self._json(404, {"error": "not found"})
+
+        def do_POST(self):
+            if self.path != "/v1/predict":
+                self._json(404, {"error": "not found"})
+                return
+            length = int(self.headers.get("Content-Length", "0"))
+            _ = self.rfile.read(length) if length else b""
+            device = torch.device(DEVICE if torch.cuda.is_available() or DEVICE == "cpu" else "cpu")
+            x = torch.randn(256, 256, device=device)
+            y = (x @ x).mean().item()
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            self._json(200, {"ok": True, "score": float(y), "device": str(device)})
+
+
+    def main():
+        print(f"listening on :{PORT} device={DEVICE} cuda_available={torch.cuda.is_available()}", flush=True)
+        server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+        server.serve_forever()
+
+
+    if __name__ == "__main__":
+        main()

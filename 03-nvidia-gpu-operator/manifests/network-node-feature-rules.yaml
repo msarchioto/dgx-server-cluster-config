@@ -1,0 +1,17 @@
+# Optional Node Feature Discovery rules for RDMA / InfiniBand NICs.
+# Helps label nodes that can run multi-node NCCL over IB/RoCE.
+# Requires NFD (enabled by GPU Operator chart).
+apiVersion: nfd.k8s-sigs.io/v1alpha1
+kind: NodeFeatureRule
+metadata:
+  name: dgx-rdma-features
+spec:
+  rules:
+    - name: "rdma.available"
+      labels:
+        feature.node.kubernetes.io/rdma.available: "true"
+      matchFeatures:
+        - feature: pci
+          matchExpressions:
+            # Mellanox vendor 15b3 — adjust if your NICs differ
+            vendor: {op: In, value: ["15b3"]}

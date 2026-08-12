@@ -1,0 +1,84 @@
+# NVIDIA GPU Operator Helm values for DGX bare-metal clusters.
+# Chart: https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/getting-started.html
+#
+# Adjust driver.enabled for your OS (false recommended on DGX OS).
+
+operator:
+  defaultRuntime: containerd
+  runtimeClass: nvidia
+
+# --- Driver ---
+# DGX OS / preinstalled drivers: false
+# Vanilla Ubuntu without NVIDIA drivers: true
+driver:
+  enabled: false
+  # When enabled, pin a version validated for your GPUs, e.g.:
+  # version: "570.124.06"
+  rdma:
+    enabled: false
+  # Use only if you must rebuild for a custom kernel
+  # usePrecompiled: false
+
+toolkit:
+  enabled: true
+  # env:
+  #   - name: CONTAINERD_CONFIG
+  #     value: /etc/containerd/config.toml
+  #   - name: CONTAINERD_SOCKET
+  #     value: /run/containerd/containerd.sock
+
+devicePlugin:
+  enabled: true
+  # config:
+  #   name: time-slicing-config
+  #   default: any
+
+dcgm:
+  enabled: true
+
+dcgmExporter:
+  enabled: true
+  serviceMonitor:
+    enabled: false  # set true if Prometheus Operator is installed
+  # resources: {}
+
+gfd:
+  enabled: true  # GPU Feature Discovery → rich node labels
+
+migManager:
+  enabled: false  # enable for MIG multi-tenancy on A100/H100
+
+nodeStatusExporter:
+  enabled: true
+
+validator:
+  # plugin:
+  #   env:
+  #     - name: WITH_WORKLOAD
+  #       value: "true"
+
+# DaemonSets only on GPU-capable nodes (after GFD/labeling).
+# Before first install, you may temporarily remove the selector so Operator
+# can land on all workers; then tighten.
+daemonsets:
+  # tolerations so GPU Operator pods schedule on tainted GPU nodes
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  # Optional: restrict to GPU pool after labeling
+  # nodeSelector:
+  #   workload: gpu
+
+# Node Feature Discovery (often required by GPU Operator chart)
+nfd:
+  enabled: true
+
+# Sandbox / vGPU (usually off for DGX bare metal dedicated)
+sandboxWorkloads:
+  enabled: false
+
+# PSA / security context defaults are chart-managed; harden in production policies.

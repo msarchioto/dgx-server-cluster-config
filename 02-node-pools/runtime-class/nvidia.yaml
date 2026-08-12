@@ -1,0 +1,18 @@
+# Default RuntimeClass for GPU workloads.
+# GPU Operator creates a compatible class when toolkit is installed; this
+# explicit object documents the expected name used by jobs in this repo.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+  labels:
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+handler: nvidia
+scheduling:
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Equal
+      value: "true"
+      effect: NoSchedule

@@ -1,0 +1,15 @@
+# Checkpoint / artifact volume. RWX required if multiple nodes write.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pytorch-checkpoints
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+spec:
+  accessModes:
+    - ReadWriteMany
+  # storageClassName: CHANGE_ME
+  resources:
+    requests:
+      storage: 1Ti

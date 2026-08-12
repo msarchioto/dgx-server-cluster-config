@@ -1,0 +1,119 @@
+# Preferred multi-node pattern: StatefulSet + headless Service for stable DNS.
+# Pods: pytorch-ddp-sts-0, pytorch-ddp-sts-1, ...
+# DNS:  pytorch-ddp-sts-0.pytorch-ddp-sts.<ns>.svc.cluster.local
+#
+# Scale replicas == nnodes. Delete the StatefulSet when the run finishes
+# (or use a Training Operator / JobSet in production).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pytorch-ddp-sts
+  namespace: default
+  labels:
+    app: pytorch-ddp-sts
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: pytorch-ddp-sts
+  ports:
+    - name: rdzv
+      port: 29500
+      targetPort: 29500
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: pytorch-ddp-sts
+  namespace: default
+  labels:
+    app: pytorch-ddp-sts
+    workload: training
+spec:
+  serviceName: pytorch-ddp-sts
+  replicas: 2
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: pytorch-ddp-sts
+  template:
+    metadata:
+      labels:
+        app: pytorch-ddp-sts
+        workload: training
+    spec:
+      runtimeClassName: nvidia
+      priorityClassName: dgx-training
+      terminationGracePeriodSeconds: 30
+      nodeSelector:
+        node-pool: dgx-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: pytorch-ddp-sts
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: pytorch
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: rdzv
+              containerPort: 29500
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              NNODES="${NNODES:-2}"
+              NPROC="${NPROC_PER_NODE:-8}"
+              # StatefulSet ordinal from hostname: pytorch-ddp-sts-0 → 0
+              ORDINAL="${HOSTNAME##*-}"
+              RDZV_HOST="pytorch-ddp-sts-0.pytorch-ddp-sts"
+              RDZV_PORT="29500"
+              echo "hostname=${HOSTNAME} node_rank=${ORDINAL} nnodes=${NNODES}"
+              torchrun \
+                --nnodes="${NNODES}" \
+                --nproc_per_node="${NPROC}" \
+                --node_rank="${ORDINAL}" \
+                --rdzv_backend=c10d \
+                --rdzv_endpoint="${RDZV_HOST}:${RDZV_PORT}" \
+                --rdzv_id=pytorch-ddp-sts \
+                /workspace/examples/train_ddp_min.py
+              # Keep pod for log inspection after success; remove sleep for CI
+              echo "Training process exited; sleeping for log collection"
+              sleep 3600
+          envFrom:
+            - configMapRef:
+                name: pytorch-distributed-env
+          env:
+            - name: NNODES
+              value: "2"
+            - name: NPROC_PER_NODE
+              value: "8"
+          resources:
+            requests:
+              cpu: "32"
+              memory: 256Gi
+              nvidia.com/gpu: "8"
+            limits:
+              cpu: "64"
+              memory: 512Gi
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pytorch-distributed-env
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: dgx-server-cluster-config
+data:
+  # --- PyTorch / torchrun ---
+  TORCH_DISTRIBUTED_DEBUG: "OFF"
+  OMP_NUM_THREADS: "8"
+  # --- NCCL (tune per fabric) ---
+  NCCL_DEBUG: "WARN"
+  NCCL_ASYNC_ERROR_HANDLING: "1"
+  NCCL_IB_DISABLE: "0"
+  # Set to your cluster data-plane interface (examples: eth0, ens1f0, ib0, bond0)
+  NCCL_SOCKET_IFNAME: "eth0"
+  # Optional InfiniBand HCA selection:
+  # NCCL_IB_HCA: "mlx5_0,mlx5_1"
+  # NCCL_NET_GDR_LEVEL: "PHB"
+  # CUDA
+  NVIDIA_VISIBLE_DEVICES: "all"
+  NVIDIA_DRIVER_CAPABILITIES: "compute,utility"

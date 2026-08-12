@@ -1,0 +1,20 @@
+# Optional: share each physical GPU among multiple pods (replicas).
+# Wire into devicePlugin.config in values.yaml after applying this ConfigMap.
+#
+# WARNING: time-slicing is NOT spatial isolation. Not suitable for
+# multi-tenant untrusted workloads without additional controls.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: time-slicing-config
+  namespace: gpu-operator
+data:
+  any: |-
+    version: v1
+    sharing:
+      timeSlicing:
+        renameByDefault: false
+        failRequestsGreaterThanOne: false
+        resources:
+          - name: nvidia.com/gpu
+            replicas: 4

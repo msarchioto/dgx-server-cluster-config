@@ -1,0 +1,125 @@
+# Multi-node DDP with torchrun c10d rendezvous.
+# Default: 2 nodes × 8 GPUs = world size 16.
+# Adjust nnodes, parallelism, and resources for your fleet.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pytorch-ddp-multi
+  namespace: default
+  labels:
+    app: pytorch-ddp-multi
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: pytorch-ddp-multi
+  ports:
+    - name: rdzv
+      port: 29500
+      targetPort: 29500
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pytorch-ddp-multi
+  namespace: default
+  labels:
+    app: pytorch-ddp-multi
+    workload: training
+spec:
+  parallelism: 2          # number of worker pods == nnodes
+  completions: 2
+  completionMode: Indexed # provides JOB_COMPLETION_INDEX as rank node id
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: pytorch-ddp-multi
+        workload: training
+    spec:
+      restartPolicy: Never
+      runtimeClassName: nvidia
+      priorityClassName: dgx-training
+      subdomain: pytorch-ddp-multi
+      nodeSelector:
+        node-pool: dgx-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      # Prefer packing one pod per node
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: pytorch-ddp-multi
+              topologyKey: kubernetes.io/hostname
+      # hostNetwork: true   # uncomment if CNI interferes with NCCL
+      # dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: pytorch
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: rdzv
+              containerPort: 29500
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              NNODES="${NNODES:-2}"
+              NPROC="${NPROC_PER_NODE:-8}"
+              # Indexed Job: 0 .. nnodes-1
+              NODE_RANK="${JOB_COMPLETION_INDEX:?JOB_COMPLETION_INDEX required}"
+              RDZV_HOST="${RDZV_HOST:-pytorch-ddp-multi-0.pytorch-ddp-multi}"
+              RDZV_PORT="${RDZV_PORT:-29500}"
+              echo "node_rank=${NODE_RANK} nnodes=${NNODES} nproc_per_node=${NPROC}"
+              echo "rdzv=${RDZV_HOST}:${RDZV_PORT}"
+              torchrun \
+                --nnodes="${NNODES}" \
+                --nproc_per_node="${NPROC}" \
+                --node_rank="${NODE_RANK}" \
+                --rdzv_backend=c10d \
+                --rdzv_endpoint="${RDZV_HOST}:${RDZV_PORT}" \
+                --rdzv_id=pytorch-ddp-multi \
+                /workspace/examples/train_ddp_min.py
+          envFrom:
+            - configMapRef:
+                name: pytorch-distributed-env
+          env:
+            - name: NNODES
+              value: "2"
+            - name: NPROC_PER_NODE
+              value: "8"
+            # Pod-0 of indexed job is typically the rdzv host when using
+            # stable network identities. With plain Jobs, pod DNS is:
+            #   <job-name>-<index>.<service>
+            # Override if your cluster DNS naming differs.
+            - name: RDZV_HOST
+              value: "pytorch-ddp-multi-0.pytorch-ddp-multi"
+            - name: RDZV_PORT
+              value: "29500"
+          resources:
+            requests:
+              cpu: "32"
+              memory: 256Gi
+              nvidia.com/gpu: "8"
+            limits:
+              cpu: "64"
+              memory: 512Gi
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts

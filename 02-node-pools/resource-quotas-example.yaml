@@ -1,0 +1,41 @@
+# Example namespace isolation for multi-tenant GPU use.
+# Create the namespace first, then apply and adjust hard limits to your fleet.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-ml
+  labels:
+    node-pool-access: dgx-gpu
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: team-ml-gpu-quota
+  namespace: team-ml
+spec:
+  hard:
+    requests.cpu: "128"
+    requests.memory: 2Ti
+    limits.cpu: "256"
+    limits.memory: 4Ti
+    requests.nvidia.com/gpu: "16"
+    limits.nvidia.com/gpu: "16"
+    pods: "50"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: team-ml-defaults
+  namespace: team-ml
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: "1"
+        memory: 4Gi
+      default:
+        cpu: "4"
+        memory: 16Gi
+      max:
+        cpu: "128"
+        memory: 1Ti

@@ -1,0 +1,21 @@
+# Example worker join configuration.
+# Copy to join-config.yaml and fill token + CA hash from:
+#   kubeadm token create --print-join-command
+#   openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | \
+#     openssl rsa -pubin -outform der 2>/dev/null | \
+#     openssl dgst -sha256 -hex | sed 's/^.* //'
+
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: "CHANGE_ME.API_ENDPOINT:6443"
+    token: "CHANGE_ME.token"
+    caCertHashes:
+      - "sha256:CHANGE_ME_CA_CERT_HASH"
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+  name: "CHANGE_ME.dgx-worker-hostname"
+  kubeletExtraArgs:
+    - name: node-labels
+      value: "nvidia.com/gpu.present=true,node-pool=dgx-gpu,workload=gpu"

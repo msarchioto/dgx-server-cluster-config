@@ -1,0 +1,92 @@
+# Single-node multi-GPU DDP job (one DGX worker).
+# Edit: image tag, GPU count, command, volumes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pytorch-ddp-single
+  namespace: default
+  labels:
+    app: pytorch-ddp-single
+    workload: training
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: pytorch-ddp-single
+        workload: training
+    spec:
+      restartPolicy: Never
+      runtimeClassName: nvidia
+      priorityClassName: dgx-training
+      nodeSelector:
+        node-pool: dgx-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      # Optional: pin to a topology domain
+      # affinity:
+      #   nodeAffinity:
+      #     requiredDuringSchedulingIgnoredDuringExecution:
+      #       nodeSelectorTerms:
+      #         - matchExpressions:
+      #             - key: network.topology.dgx/domain
+      #               operator: In
+      #               values: ["ib-fabric-1"]
+      containers:
+        - name: pytorch
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              # GPUs on this node (match resources.limits)
+              NPROC="${NPROC_PER_NODE:-8}"
+              echo "Starting single-node torchrun with nproc_per_node=${NPROC}"
+              torchrun \
+                --standalone \
+                --nnodes=1 \
+                --nproc_per_node="${NPROC}" \
+                /workspace/examples/train_ddp_min.py
+          envFrom:
+            - configMapRef:
+                name: pytorch-distributed-env
+          env:
+            - name: NPROC_PER_NODE
+              value: "8"
+          resources:
+            requests:
+              cpu: "32"
+              memory: 256Gi
+              nvidia.com/gpu: "8"
+            limits:
+              cpu: "64"
+              memory: 512Gi
+              nvidia.com/gpu: "8"
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+            # Uncomment when PVCs exist:
+            # - name: dataset
+            #   mountPath: /data
+            #   readOnly: true
+            # - name: checkpoints
+            #   mountPath: /checkpoints
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]  # helpful for RDMA registration
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts
+        # - name: dataset
+        #   persistentVolumeClaim:
+        #     claimName: pytorch-dataset
+        # - name: checkpoints
+        #   persistentVolumeClaim:
+        #     claimName: pytorch-checkpoints

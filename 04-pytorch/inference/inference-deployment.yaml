@@ -1,0 +1,99 @@
+# Example multi-replica GPU inference Deployment + Service.
+# Replace the command with your model server (TorchServe, Triton, vLLM, custom).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pytorch-inference
+  namespace: default
+  labels:
+    app: pytorch-inference
+    workload: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pytorch-inference
+  template:
+    metadata:
+      labels:
+        app: pytorch-inference
+        workload: inference
+    spec:
+      runtimeClassName: nvidia
+      priorityClassName: dgx-inference-online
+      nodeSelector:
+        node-pool: dgx-gpu
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: server
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              python /workspace/examples/infer_http_min.py
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: MODEL_DEVICE
+              value: "cuda:0"
+          envFrom:
+            - configMapRef:
+                name: pytorch-distributed-env
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "16"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: examples
+              mountPath: /workspace/examples
+              readOnly: true
+            # - name: model
+            #   mountPath: /models
+            #   readOnly: true
+      volumes:
+        - name: examples
+          configMap:
+            name: pytorch-example-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pytorch-inference
+  namespace: default
+  labels:
+    app: pytorch-inference
+spec:
+  type: ClusterIP
+  selector:
+    app: pytorch-inference
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

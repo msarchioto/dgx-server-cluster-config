@@ -1,0 +1,80 @@
+# kubeadm configuration for DGX bare-metal clusters.
+# Docs: https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta4/
+#
+# BEFORE INIT: replace all CHANGE_ME values.
+
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  # Primary IP of this control-plane node (management NIC)
+  advertiseAddress: "CHANGE_ME.CONTROL_PLANE_IP"
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+  name: "CHANGE_ME.control-plane-1"  # hostname -s
+  taints:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/control-plane
+  kubeletExtraArgs:
+    - name: node-labels
+      value: "node.kubernetes.io/instance-type=control-plane,workload=system"
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v1.31.4
+clusterName: dgx-cluster
+
+# VIP or DNS name of the API load balancer (required for HA; for single-node
+# control plane you can use the control-plane IP:6443).
+controlPlaneEndpoint: "CHANGE_ME.API_ENDPOINT:6443"
+
+networking:
+  serviceSubnet: "10.96.0.0/12"
+  # Must match CNI (Calico default below). Change if you use a different pod CIDR.
+  podSubnet: "192.168.0.0/16"
+  dnsDomain: "cluster.local"
+
+apiServer:
+  extraArgs:
+    - name: enable-admission-plugins
+      value: NodeRestriction,DefaultStorageClass
+  certSANs:
+    - "CHANGE_ME.API_ENDPOINT"
+    - "localhost"
+    - "127.0.0.1"
+    # Add every control-plane hostname/IP and the VIP
+
+controllerManager:
+  extraArgs:
+    - name: bind-address
+      value: "0.0.0.0"
+
+scheduler:
+  extraArgs:
+    - name: bind-address
+      value: "0.0.0.0"
+
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+# Reserve resources so system + kubelet stay healthy on busy GPU nodes.
+# Tune for DGX (large memory); lower on small control planes.
+systemReserved:
+  cpu: "1"
+  memory: "2Gi"
+  ephemeral-storage: "10Gi"
+kubeReserved:
+  cpu: "1"
+  memory: "2Gi"
+  ephemeral-storage: "10Gi"
+evictionHard:
+  memory.available: "500Mi"
+  nodefs.available: "10%"
+maxPods: 110
+serializeImagePulls: false
+# Optional: registry mirrors / insecure registries via containerd, not kubelet

@@ -1,0 +1,21 @@
+# Example MIG configuration for A100/H100 (all-balanced style).
+# Enable migManager in values.yaml and follow NVIDIA docs to apply strategy.
+# Profiles vary by GPU SKU — validate against nvidia-smi mig -lgip on the node.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-mig-parted-config
+  namespace: gpu-operator
+data:
+  config.yaml: |
+    version: v1
+    mig-configs:
+      all-disabled:
+        - devices: all
+          mig-enabled: false
+      # Example only — adjust profiles for your GPU (A100 40G/80G, H100, etc.)
+      all-1g.5gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.5gb": 7

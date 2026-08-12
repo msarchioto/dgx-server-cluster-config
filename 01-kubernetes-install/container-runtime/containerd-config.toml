@@ -1,0 +1,29 @@
+# Minimal production containerd config for Kubernetes (cgroup v2 / SystemdCgroup).
+# GPU Operator will inject the nvidia runtime; do not hard-require it before install.
+
+version = 2
+
+[plugins."io.containerd.grpc.v1.cri"]
+  sandbox_image = "registry.k8s.io/pause:3.10"
+  # Allow large multi-layer AI images
+  max_concurrent_downloads = 10
+
+[plugins."io.containerd.grpc.v1.cri".containerd]
+  default_runtime_name = "runc"
+  discard_unpacked_layers = true
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+    runtime_type = "io.containerd.runc.v2"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+      SystemdCgroup = true
+
+  # Placeholder: GPU Operator / NVIDIA Container Toolkit typically adds:
+  # [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia]
+  #   runtime_type = "io.containerd.runc.v2"
+  #   [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia.options]
+  #     BinaryName = "/usr/bin/nvidia-container-runtime"
+  #     SystemdCgroup = true
+
+[plugins."io.containerd.grpc.v1.cri".registry]
+  config_path = "/etc/containerd/certs.d"

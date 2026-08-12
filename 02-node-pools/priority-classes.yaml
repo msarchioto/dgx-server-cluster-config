@@ -1,0 +1,41 @@
+# PriorityClasses for GPU cluster fairness.
+# Higher value = higher priority. Critical system workloads stay highest.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: dgx-system-critical
+value: 1000000
+globalDefault: false
+description: "Cluster system components that must schedule before user jobs"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: dgx-inference-online
+value: 100000
+globalDefault: false
+description: "Latency-sensitive online inference"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: dgx-training
+value: 50000
+globalDefault: false
+description: "Distributed / multi-GPU training jobs"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: dgx-batch
+value: 10000
+globalDefault: false
+description: "Best-effort batch, experiments, and notebooks"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: dgx-default
+value: 0
+globalDefault: true
+description: "Default priority for unspecified workloads"
